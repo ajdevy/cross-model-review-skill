@@ -106,5 +106,5 @@ For review → fix → re-review until the verdict is clean, pair this with a **
 ## Requirements
 
 - Codex route: `codex` on PATH, logged in.
-- Claude route: `claude-vps` on PATH with its proxy tunnel up. If `claude-vps` is absent the script falls back to `claude` and says so on stderr; if the tunnel is down it fails loudly instead of bypassing the proxy.
+- Claude route: prefers `claude-vps` on PATH with its proxy tunnel up, probed with a fast `claude-vps --version` before the real run. If `claude-vps` is missing or that probe fails (e.g. tunnel down), the script falls back to plain `claude` and says so on stderr. If neither binary is on PATH, it fails.
 - Model and effort defaults are overridable: `CROSS_MODEL_REVIEW_CODEX_MODEL`, `CROSS_MODEL_REVIEW_CODEX_EFFORT`, `CROSS_MODEL_REVIEW_CLAUDE_MODEL`, `CROSS_MODEL_REVIEW_CLAUDE_EFFORT`, `CROSS_MODEL_REVIEW_DIFF_LIMIT`, `CROSS_MODEL_REVIEW_TIMEOUT`.

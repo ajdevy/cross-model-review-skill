@@ -122,9 +122,15 @@ case "$reviewer" in
     reviewer_bin=claude-vps
     reviewer_model=$claude_model
     reviewer_effort=$claude_effort
+    claude_vps_unavailable=""
     if ! command -v claude-vps >/dev/null 2>&1; then
+      claude_vps_unavailable="not installed"
+    elif ! claude-vps --version >/dev/null 2>&1; then
+      claude_vps_unavailable="tunnel/proxy unavailable"
+    fi
+    if [ -n "$claude_vps_unavailable" ]; then
       if command -v claude >/dev/null 2>&1; then
-        printf '%s\n' "cross-model-review: claude-vps not installed, falling back to claude" >&2
+        printf '%s\n' "cross-model-review: claude-vps $claude_vps_unavailable, falling back to claude" >&2
         reviewer_bin=claude
       fi
     fi
