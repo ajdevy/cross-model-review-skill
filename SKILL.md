@@ -1,25 +1,40 @@
 ---
 name: cross-model-review
-description: 'Get code reviewed by a model from a different family than the current agent, so the reviewer does not share the author''s blind spots. Routes automatically: Claude Code hosts call Codex (gpt-5.6-terra, reasoning max), Codex/ChatGPT hosts call claude-vps (claude-opus-5, effort max), anything else calls claude-vps. Triggers on: "cross model review", "second opinion", "review with another model", "ревью другой моделью", "проверь другой моделью".'
+description: 'Get code reviewed by a model from the opposite family, with explicit routing, criticality-to-effort mapping, and no same-family fallback. Triggers on: "cross model review", "second opinion", "review with another model", "ревью другой моделью", "проверь другой моделью".'
 ---
 
 # Cross-Model Review
 
 **Goal:** Have the current change reviewed by a model that did not write it and does not share the author's assumptions.
 
-**Your role:** Determine the scope, run the reviewer CLI through the bundled script, then triage what comes back. You own the final judgement — the other model is a second opinion, not an authority.
+**Your role:** Determine the scope, run the reviewer CLI through the bundled script, then triage what comes back. The other model is a second opinion; the host agent owns the final judgement.
 
 ## Routing
 
-The script detects the host agent and picks the opposite family. Never invoke the same family that produced the code.
+The script detects the author family and selects only the opposite family:
 
-| Host agent | Reviewer CLI | Model | Thinking |
+| Host family | Route order | Model | Effort |
 | --- | --- | --- | --- |
-| Claude Code | `codex exec` | `gpt-5.6-terra` | `model_reasoning_effort=max` |
-| Codex / ChatGPT | `claude-vps -p` | `claude-opus-5` | `--effort max` |
-| Anything else | `claude-vps -p` | `claude-opus-5` | `--effort max` |
+| Claude Code | `codex exec` | `gpt-5.6-terra` | criticality mapping below |
+| Codex / ChatGPT | `claude-vps -p`, then plain `claude -p` | `claude-opus-5` | criticality mapping below |
+| Unknown | `SKIPPED` until `--host` is supplied | none | none |
 
-Detection order: `CROSS_MODEL_REVIEW_HOST` override → process ancestry (`codex`, `ChatGPT`, `claude`) → `CODEX_*` / `CLAUDECODE` / `AI_AGENT` env markers → `other`.
+`claude-vps` may fall back to plain `claude` when the tunnel, proxy, quota, or capacity is unavailable. A Codex host never falls back to Codex, and a Claude Code host never falls back to Claude. Same-family fallback is forbidden unless the operator makes a separate explicit decision; this skill has no implicit same-family fallback.
+
+Detection order is `CROSS_MODEL_REVIEW_HOST` override, process ancestry (`codex`, `ChatGPT`, `claude`), then `CODEX_*` / `CLAUDECODE` / `AI_AGENT` markers. An unresolved host fails closed. `--reviewer` is accepted only when it names a route from the opposite family.
+
+## Criticality and effort
+
+The default is `normal`. Select `--criticality infrastructure` for infrastructure changes and `--criticality security` for security-sensitive work. Use `--criticality critical` only when the operator has classified the PR as critical.
+
+| Criticality | Codex `model_reasoning_effort` | Claude `--effort` | Intended use |
+| --- | --- | --- | --- |
+| `normal` | `high` | `high` | ordinary review |
+| `infrastructure` | `xhigh` | `xhigh` | deployment, host, proxy, CI, backup, or infrastructure behavior |
+| `security` | `xhigh` | `xhigh` | secrets, auth, isolation, public exposure, or security controls |
+| `critical` | `max` | `max` | operator-declared critical PR only |
+
+`CROSS_MODEL_REVIEW_CODEX_EFFORT` and `CROSS_MODEL_REVIEW_CLAUDE_EFFORT` may override the mapped value for an explicit operational reason. The selected model and effort are printed in routing metadata. The default timeout is 2400 seconds.
 
 ## Usage
 
@@ -33,78 +48,55 @@ Scope selection (`--scope`, default `auto`):
 
 | Scope | Reviews |
 | --- | --- |
-| `auto` | uncommitted changes if the worktree is dirty, otherwise the branch vs its base |
-| `uncommitted` | staged + unstaged + untracked |
+| `auto` | uncommitted changes if dirty, otherwise the branch against its base |
+| `uncommitted` | staged, unstaged, and untracked changes |
 | `staged` | `git diff --cached` |
-| `branch` | `git diff <merge-base>...HEAD`, base auto-detected or `--base <branch>` |
-| `commit` | one commit, `--commit <sha>` |
-| `paths` | whole files/directories, `--path <p>` (repeatable) |
+| `branch` | `git diff <merge-base>...HEAD` |
+| `commit` | one commit, selected by `--commit <sha>` |
+| `paths` | whole files or directories selected by repeated `--path` |
 | `all` | the whole project |
 
-Other options: `--cwd <dir>`, `--out <file>`, `--timeout <seconds>` (default 2400), `--host` / `--reviewer` to override routing, `--print-command` to show the command without running it, `--dry-run` to also print the prompt.
+Important options: `--cwd`, `--host`, `--reviewer`, `--criticality`, `--out`, `--timeout`, `--print-command`, and `--dry-run`.
 
-Exit codes: `0` ok, `2` usage/empty scope, `3` reviewer CLI missing, `4` reviewer failed or timed out, `5` reviewer returned nothing, `6` reviewer replied without a `VERDICT:` line.
+Exit codes: `0` completed or deliberately skipped, `2` usage/empty scope, `3` no opposite-family route, `4` reviewer failure or timeout, `5` empty output, `6` missing `VERDICT:` line. A skipped run writes `VERDICT: SKIPPED` and must not be presented as a review.
 
-Exit `6` almost always means the reviewer asked a clarifying question instead of reviewing — its own global instructions pulled it toward gathering requirements first. The prompt already tells it the run is non-interactive; if it happens anyway, re-run once with the missing context supplied after `--`. Do not present a question as if it were a review.
+## Reviewer contract
 
-## Workflow
+The reviewer is read-only. The Codex route uses `--sandbox read-only`; the Claude route uses `--permission-mode plan` and disallows edit tools. Do not weaken this boundary and do not ask the reviewer to fix the change.
 
-### 1. Fix the scope before spending a review
+The prompt requires this format:
 
-Confirm the working directory and what is actually under review. `--scope auto` is right most of the time; be explicit when the user named a branch, commit, or set of files. If the diff is empty the script exits `2` — do not re-run it with a wider scope to manufacture something to review; tell the user there is nothing there.
+```text
+VERDICT: BLOCKER | CONCERNS | LGTM
 
-Preview the routing first when the environment is unfamiliar:
+### BLOCKER | CRITICAL | MAJOR | MINOR - short title
+- Where: path:line
+- Defect: one sentence
+- Failure: concrete state and result
+- Fix: specific change
 
-```bash
-./scripts/cross-model-review.sh --print-command
+### Blind-spot check
+...
+
+### Checked
+...
 ```
 
-### 2. Run the review
+Use `BLOCKER` when merge or release is unsafe, such as secret exposure, auth bypass, irreversible data loss, or a broken rollback path. Use `CRITICAL` for a material correctness, security, or availability defect that must be fixed before the review is clean. `MAJOR` and `MINOR` are lower-severity findings.
 
-```bash
-./scripts/cross-model-review.sh --out /tmp/cross-model-review.md -- "Focus on the retry path; this replaces a hand-rolled backoff."
-```
+## Workflow and triage
 
-Pass anything the reviewer cannot infer from the diff after `--`: the intent of the change, known constraints, what the user is worried about. A max-reasoning review takes minutes — run it in the background and keep working if there is independent work left, and never poll it in a tight loop.
+1. Confirm the working directory and exact scope before spending a review.
+2. Preview routing with `--print-command` when the environment is unfamiliar.
+3. Run the reviewer and read the complete report.
+4. Classify every finding as confirmed, rejected, or unresolved. Verify a finding against the real files before changing anything.
+5. Fix confirmed findings separately, run project checks, then use `cross-model-review-loop` for re-review.
 
-The review lands on stdout and in `--out`. Routing metadata goes to stderr.
-
-### 3. Triage the findings — do not just forward them
-
-The reviewer has not seen your conversation and may be wrong. For each finding, decide one of:
-
-- **Confirmed** — you traced it to the code and the failure scenario holds. Fix it or list it as required work.
-- **Rejected** — you checked and it is wrong, already handled elsewhere, or out of scope. Say why in one line.
-- **Unresolved** — you cannot settle it without information you do not have. Name what would settle it.
-
-Verify before accepting. A finding that names a file and line you can open is checkable in seconds; a finding that does not is usually a hallucination. Never apply a suggested fix you have not confirmed against the real code.
-
-### 4. Report
-
-Give the user, in this order:
-
-1. Which model reviewed, at which effort, over which scope.
-2. The reviewer's verdict line.
-3. Confirmed findings, most severe first, each with your own one-line assessment.
-4. Rejected findings, compressed to one line each with the reason.
-5. What you changed, if anything.
-
-Report the reviewer's verdict as its opinion, not as fact. If you disagree with a BLOCKER, say so and explain — the user needs your read, not a relay.
-
-## Hard rules
-
-- The reviewer is read-only. The Codex route runs `--sandbox read-only`; the Claude route runs `--permission-mode plan` with `Edit`/`Write`/`NotebookEdit` disallowed. Do not weaken either to let the reviewer "just fix it."
-- Never route a review to the same model family that wrote the code. That defeats the whole skill. If the opposite CLI is unavailable, say so and stop rather than falling back to a same-family review.
-- Do not apply fixes during the review run. Review first, triage, then change code as a separate step the user can see.
-- Do not paste the raw reviewer output as your answer. Triage is the deliverable.
-- Secrets stay out of the prompt. The script sends a diff — if the diff contains credentials, that is a finding to raise, not something to ship to another provider silently.
-
-## See also
-
-For review → fix → re-review until the verdict is clean, pair this with a **`cross-model-review-loop`** skill that drives this one across rounds and tracks convergence (not included in this repository).
+Never paste raw reviewer output as the final report. Report route, model, effort, scope, verdict, and your triage. Keep secrets out of the prompt; a credential in the diff is a security finding, not input to ship to another provider.
 
 ## Requirements
 
-- Codex route: `codex` on PATH, logged in.
-- Claude route: prefers `claude-vps` on PATH with its proxy tunnel up, probed with a fast `claude-vps --version` before the real run. If `claude-vps` is missing or that probe fails (e.g. tunnel down), the script falls back to plain `claude` and says so on stderr. If neither binary is on PATH, it fails.
-- Model and effort defaults are overridable: `CROSS_MODEL_REVIEW_CODEX_MODEL`, `CROSS_MODEL_REVIEW_CODEX_EFFORT`, `CROSS_MODEL_REVIEW_CLAUDE_MODEL`, `CROSS_MODEL_REVIEW_CLAUDE_EFFORT`, `CROSS_MODEL_REVIEW_DIFF_LIMIT`, `CROSS_MODEL_REVIEW_TIMEOUT`.
+- Codex route: `codex` on PATH and authenticated.
+- Claude route: `claude-vps` is probed first; plain `claude` is the opposite-family fallback when available.
+- No same-family fallback. If the opposite family is unavailable, skip and report it.
+- Model defaults are `gpt-5.6-terra` and `claude-opus-5`; model names and effort values are overridable through the documented environment variables.
