@@ -18,7 +18,9 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 detector="$script_dir/detect-host-agent.sh"
 
 codex_model=${CROSS_MODEL_REVIEW_CODEX_MODEL:-gpt-5.6-terra}
-claude_model=${CROSS_MODEL_REVIEW_CLAUDE_MODEL:-claude-opus-5}
+# "sonnet" is the CLI alias for the latest Sonnet, so this follows releases
+# instead of pinning a version that goes stale.
+claude_model=${CROSS_MODEL_REVIEW_CLAUDE_MODEL:-sonnet}
 diff_inline_limit=${CROSS_MODEL_REVIEW_DIFF_LIMIT:-60000}
 
 scope=auto
@@ -105,7 +107,11 @@ case "$criticality" in
 esac
 
 codex_effort=${CROSS_MODEL_REVIEW_CODEX_EFFORT:-$default_effort}
-claude_effort=${CROSS_MODEL_REVIEW_CLAUDE_EFFORT:-$default_effort}
+# The Claude reviewer runs at max regardless of tier. It is only reached when
+# the code was written by the Codex family - employee work - which is where
+# review depth matters most, and Sonnet at max costs less than Opus did at
+# the tiered level it replaces. The tiering still governs the Codex reviewer.
+claude_effort=${CROSS_MODEL_REVIEW_CLAUDE_EFFORT:-max}
 case "$codex_effort:$claude_effort" in
   high:high|high:xhigh|high:max|xhigh:high|xhigh:xhigh|xhigh:max|max:high|max:xhigh|max:max) ;;
   *)
