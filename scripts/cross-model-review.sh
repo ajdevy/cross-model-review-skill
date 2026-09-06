@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Run a code review with a model from a different family than the host agent.
 #
-#   host = Claude Code  -> reviewer = codex        (gpt-5.6-terra)
+#   host = Claude Code  -> reviewer = codex        (gpt-5.6-luna)
 #   host = Codex/ChatGPT-> claude-vps -> claude
 #   host = anything else-> no candidates; SKIPPED until --host says which
 #                          family wrote the code
@@ -17,7 +17,7 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 detector="$script_dir/detect-host-agent.sh"
 
-codex_model=${CROSS_MODEL_REVIEW_CODEX_MODEL:-gpt-5.6-terra}
+codex_model=${CROSS_MODEL_REVIEW_CODEX_MODEL:-gpt-5.6-luna}
 # "sonnet" is the CLI alias for the latest Sonnet, so this follows releases
 # instead of pinning a version that goes stale.
 claude_model=${CROSS_MODEL_REVIEW_CLAUDE_MODEL:-sonnet}

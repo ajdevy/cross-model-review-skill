@@ -2,7 +2,7 @@
 
 A [Claude Code](https://claude.com/claude-code) / [Codex](https://openai.com/codex/) skill that gets your code reviewed by a model from a *different* family than the one that wrote it, so the reviewer doesn't share the author's blind spots.
 
-Routing is automatic: a Claude Code host calls Codex (`gpt-5.6-terra`, reasoning `max`), a Codex/ChatGPT host calls `claude-vps` (`claude-opus-5`, effort `max`). The full behavior, options, and workflow are documented in [`SKILL.md`](./SKILL.md) — that file is the skill definition itself, written to be read by an agent.
+Routing is automatic: a Claude Code host calls Codex (`gpt-5.6-luna`, reasoning `max`), a Codex/ChatGPT host calls `claude-vps` (`sonnet`, effort `max`). The full behavior, options, and workflow are documented in [`SKILL.md`](./SKILL.md) — that file is the skill definition itself, written to be read by an agent.
 
 ## Install
 

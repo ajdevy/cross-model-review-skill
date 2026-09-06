@@ -15,8 +15,8 @@ The script detects the author family and selects only the opposite family:
 
 | Host family | Route order | Model | Effort |
 | --- | --- | --- | --- |
-| Claude Code | `codex exec` | `gpt-5.6-terra` | criticality mapping below |
-| Codex / ChatGPT | `claude-vps -p`, then plain `claude -p` | `claude-opus-5` | criticality mapping below |
+| Claude Code | `codex exec` | `gpt-5.6-luna` | criticality mapping below |
+| Codex / ChatGPT | `claude-vps -p`, then plain `claude -p` | `sonnet` | criticality mapping below |
 | Unknown | `SKIPPED` until `--host` is supplied | none | none |
 
 `claude-vps` may fall back to plain `claude` when the tunnel, proxy, quota, or capacity is unavailable. A Codex host never falls back to Codex, and a Claude Code host never falls back to Claude. Same-family fallback is forbidden unless the operator makes a separate explicit decision; this skill has no implicit same-family fallback.
@@ -99,4 +99,4 @@ Never paste raw reviewer output as the final report. Report route, model, effort
 - Codex route: `codex` on PATH and authenticated.
 - Claude route: `claude-vps` is probed first; plain `claude` is the opposite-family fallback when available.
 - No same-family fallback. If the opposite family is unavailable, skip and report it.
-- Model defaults are `gpt-5.6-terra` and `claude-opus-5`; model names and effort values are overridable through the documented environment variables.
+- Model defaults are `gpt-5.6-luna` and `sonnet`; model names and effort values are overridable through the documented environment variables.
