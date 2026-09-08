@@ -495,9 +495,10 @@ fi
 # default too.
 secret_scan_redact() {
   perl -0pe '
-    s/(-----BEGIN (?:RSA|OPENSSH|EC|DSA) PRIVATE KEY-----).*?(-----END (?:RSA|OPENSSH|EC|DSA) PRIVATE KEY-----)/$1\n[REDACTED PRIVATE KEY]\n$2/sg;
+    s/(-----BEGIN (?:RSA|OPENSSH|EC|DSA|ENCRYPTED )?PRIVATE KEY-----).*?(-----END (?:RSA|OPENSSH|EC|DSA|ENCRYPTED )?PRIVATE KEY-----)/$1\n[REDACTED PRIVATE KEY]\n$2/sg;
+    s/(-----BEGIN PGP PRIVATE KEY BLOCK-----).*?(-----END PGP PRIVATE KEY BLOCK-----)/$1\n[REDACTED PRIVATE KEY]\n$2/sg;
     s/\b(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|sk-[A-Za-z0-9_-]{20,})\b/[REDACTED TOKEN]/g;
-    s/((?i:(?:api[_-]?key|access[_-]?token|auth(?:orization)?|client[_-]?secret|password|passwd|secret|token))\s*[:=]\s*["'"'"']?)[^\s,"'"'"']{8,}/$1[REDACTED]/g;
+    s/((?i:[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?(?:key|token)|auth(?:orization)?|client[_-]?secret|credential|password|passwd|secret|token)[A-Za-z0-9_.-]*)\s*[:=]\s*["'"'"']?)[^\s,"'"'"']{8,}/$1 . "[REDACTED]"/ge;
   '
 }
 

@@ -41,7 +41,9 @@ The default is `normal`. Select `--criticality infrastructure` for infrastructur
 Before any diff is placed in an external reviewer prompt, the script runs a
 local credential scan and redacts detected private keys, provider tokens, and
 credential-like assignment values. This applies to every repository without an
-allowlist; raw credential-like values must not cross the local process boundary.
+allowlist. The guarantee covers the diff text constructed for the external
+prompt; reviewers must still treat direct repository reads as untrusted, and
+the host must not use this as a substitute for repository secret hygiene.
 
 ## Usage
 
