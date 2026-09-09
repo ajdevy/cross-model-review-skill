@@ -36,6 +36,15 @@ The default is `normal`. Select `--criticality infrastructure` for infrastructur
 
 `CROSS_MODEL_REVIEW_CODEX_EFFORT` and `CROSS_MODEL_REVIEW_CLAUDE_EFFORT` may override the mapped value for an explicit operational reason. The selected model and effort are printed in routing metadata. The default timeout is 2400 seconds.
 
+## Secret boundary
+
+Before any diff is placed in an external reviewer prompt, the script runs a
+local credential scan and redacts detected private keys, provider tokens, and
+credential-like assignment values. This applies to every repository without an
+allowlist. The guarantee covers the diff text constructed for the external
+prompt; reviewers must still treat direct repository reads as untrusted, and
+the host must not use this as a substitute for repository secret hygiene.
+
 ## Usage
 
 Everything runs through one script. Bare paths resolve from the skill root.

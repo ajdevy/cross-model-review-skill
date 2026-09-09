@@ -490,6 +490,26 @@ if [ "$scope" != paths ] && [ "$scope" != all ] && [ -z "$(printf '%s' "$diff_te
   exit 2
 fi
 
+# Mandatory local secret scan and redaction before any diff reaches an external
+# reviewer. There is no repository allowlist: new secrets are protected by
+# default too.
+secret_scan_redact() {
+  perl -0pe '
+    s/(-----BEGIN (?:(?:RSA|OPENSSH|EC|DSA|ENCRYPTED)\s+)?PRIVATE KEY-----).*?(-----END (?:(?:RSA|OPENSSH|EC|DSA|ENCRYPTED)\s+)?PRIVATE KEY-----)/$1\n[REDACTED PRIVATE KEY]\n$2/sg;
+    s/(-----BEGIN PGP PRIVATE KEY BLOCK-----).*?(-----END PGP PRIVATE KEY BLOCK-----)/$1\n[REDACTED PRIVATE KEY]\n$2/sg;
+    s/\b(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|sk-[A-Za-z0-9_-]{20,})\b/[REDACTED TOKEN]/g;
+    s/((?i:[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?(?:key|token)|auth(?:orization)?|client[_-]?secret|credential|password|passwd|secret|token)[A-Za-z0-9_.-]*)\s*[:=]\s*["'"'"']?)[^\s,"'"'"']{8,}/$1 . "[REDACTED]"/ge;
+  '
+}
+
+if [ -n "$diff_text" ]; then
+  redacted_diff=$(printf '%s' "$diff_text" | secret_scan_redact)
+  if [ "$redacted_diff" != "$diff_text" ]; then
+    printf '%s\n' 'cross-model-review: local secret scan redacted credential-like values from the diff' >&2
+    diff_text=$redacted_diff
+  fi
+fi
+
 if [ -n "$out_file" ]; then
   rm -f "${out_file}.router-status"
 fi
