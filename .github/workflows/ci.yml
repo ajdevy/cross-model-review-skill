@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            shebang=''
+            IFS= read -r shebang < "$file" || true
+            case "$shebang" in
+              *bash*) bash -n "$file" ;;
+              *'/sh'|*' env sh'*) sh -n "$file" ;;
+            esac
+          done < <(git ls-files -z)
+
+      - name: Validate JSON and frontmatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const {execFileSync} = require('node:child_process');
+          const {readFileSync} = require('node:fs');
+
+          const files = execFileSync('git', ['ls-files', '-z'], {encoding: 'utf8'})
+            .split('\0')
+            .filter(Boolean);
+          const errors = [];
+
+          for (const file of files.filter((name) => name.endsWith('.json'))) {
+            try {
+              JSON.parse(readFileSync(file, 'utf8'));
+            } catch (error) {
+              errors.push(`${file}: invalid JSON (${error.message})`);
+            }
+          }
+
+          for (const file of files.filter((name) => name.endsWith('SKILL.md'))) {
+            const lines = readFileSync(file, 'utf8').split(/\r?\n/);
+            if (lines[0] !== '---') {
+              errors.push(`${file}: missing YAML frontmatter`);
+              continue;
+            }
+            const end = lines.findIndex((line, index) => index > 0 && line === '---');
+            if (end < 0) {
+              errors.push(`${file}: unterminated YAML frontmatter`);
+              continue;
+            }
+            const fields = new Map();
+            for (const line of lines.slice(1, end)) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              if (/^\s/.test(line)) continue;
+              const match = line.match(/^([A-Za-z0-9_-]+):(?:[ \t]+(.*))?$/);
+              if (!match) {
+                errors.push(`${file}: malformed frontmatter line`);
+                continue;
+              }
+              fields.set(match[1], (match[2] || '').trim());
+            }
+            for (const field of ['name', 'description']) {
+              if (!fields.get(field)) errors.push(`${file}: missing frontmatter ${field}`);
+            }
+          }
+
+          if (errors.length) {
+            for (const error of errors) console.error(error);
+            process.exit(1);
+          }
+          console.log('JSON and frontmatter validation passed.');
+          NODE
+
+      - name: Run existing tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' tests < <(git ls-files -z | while IFS= read -r -d '' file; do
+            [[ "$file" == */test-*.sh ]] && printf '%s\0' "$file"
+          done | sort -z)
+          ((${#tests[@]} > 0)) || { echo 'No existing test scripts found.' >&2; exit 1; }
+          for test_script in "${tests[@]}"; do
+            bash "$test_script"
+          done
+          if [[ -x scripts/validate-skills.sh ]]; then
+            bash scripts/validate-skills.sh
+          fi
+
+      - name: Scan for secret patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+          pattern='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|sk-[A-Za-z0-9_-]{20,}'
+          if matches=$(git grep --cached -I -l -E -e "$pattern" -- \
+            ':(exclude)**/cross-model-review.sh' \
+            ':(exclude)**/test-secret-redaction.sh'); then
+            echo 'Potential secret pattern found in tracked file(s):' >&2
+            printf '%s\n' "$matches" >&2
+            exit 1
+          else
+            status=$?
+            if [[ "$status" -eq 1 ]]; then
+              echo 'No secret patterns found.'
+            else
+              echo "Secret scan failed with git grep status $status." >&2
+              exit "$status"
+            fi
+          fi
